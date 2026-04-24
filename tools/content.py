@@ -19,8 +19,6 @@ from config.settings import (
     CONTENT_API_BASE
 )
 
-from .utils import _to_path
-
 def get_govuk_page(url: str) -> dict:
     path = (
         url
@@ -47,7 +45,6 @@ def fetch_govuk_page(url: str) -> dict:
         each part parsed with its own tab URL so direct_urls are
         correctly scoped to the tab, not the parent guide.
     """
-    path = _to_path(url)
 
     try:
         data = get_govuk_page(url)
