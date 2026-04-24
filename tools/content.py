@@ -21,6 +21,22 @@ from config.settings import (
 
 from .utils import _to_path
 
+def get_govuk_page(url: str) -> dict:
+    path = (
+        url
+        .replace("https://www.gov.uk", "")
+        .split("?")[0]
+        .split("#")[0]
+        .rstrip("/")
+    )
+    response = requests.get(
+        f"{CONTENT_API_BASE}{path}",
+        timeout=REQUEST_TIMEOUT,
+        verify=VERIFY_SSL,
+    )
+    response.raise_for_status()
+    return response.json()
+
 def fetch_govuk_page(url: str) -> dict:
     """
     Fetches a GOV.UK page via the Content API and returns its sections.
@@ -34,13 +50,7 @@ def fetch_govuk_page(url: str) -> dict:
     path = _to_path(url)
 
     try:
-        response = requests.get(
-            f"{CONTENT_API_BASE}{path}",
-            timeout=REQUEST_TIMEOUT,
-            verify=VERIFY_SSL,
-        )
-        response.raise_for_status()
-        data = response.json()
+        data = get_govuk_page(url)
     except requests.RequestException as e:
         return {"error": f"fetch_failed: {e}", "url": url}
 
@@ -159,6 +169,3 @@ def _make_section(
         "content_preview": " ".join(content).strip()[:CONTENT_PREVIEW_CHARS],
     }
 
-
-def _strip_html(html: str) -> str:
-    return BeautifulSoup(html, "lxml").get_text(separator=" ", strip=True)
