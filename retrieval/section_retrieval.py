@@ -99,11 +99,10 @@ class SectionResult:
     verbatim_content: str = ""
     reason: str = ""
 
-
-def find_section(query: str, bedrock_client) -> SectionResult:
+def make_tools(search_cap: int = 2) -> dict:
     """
-    Main entry point. Finds the most relevant GOV.UK section for a query.
-    Returns a SectionResult with verbatim_content populated if section found.
+    Returns the tools dict with state (visited urls, search count)
+    captured in closures. Called once per query.
     """
     search_count = [0]
     visited_urls: set[str] = set()
@@ -148,6 +147,15 @@ def find_section(query: str, bedrock_client) -> SectionResult:
         "search_govuk": handle_search,
         "fetch_govuk_page": handle_fetch,
     }
+    return tools
+
+
+def find_section(query: str, bedrock_client) -> SectionResult:
+    """
+    Main entry point. Finds the most relevant GOV.UK section for a query.
+    Returns a SectionResult with verbatim_content populated if section found.
+    """
+
 
     raw_response = run_tool_loop(
         system=SYSTEM_PROMPT,
@@ -155,7 +163,7 @@ def find_section(query: str, bedrock_client) -> SectionResult:
             f"Find the most relevant GOV.UK section for this question "
             f"from a British national: {query}"
         ),
-        tools=tools,
+        tools=make_tools(search_cap=2),
         tool_specs=TOOL_SPECS,
         bedrock_client=bedrock_client,
         max_iterations=MAX_ITERATIONS,
