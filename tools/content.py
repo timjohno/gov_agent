@@ -10,7 +10,6 @@ from config.settings import (
 )
 
 from tools.section import Section
-from tools.parsed_page import ParsedPage
 
 def get_govuk_page(url: str) -> dict:
     path = (
@@ -28,18 +27,19 @@ def get_govuk_page(url: str) -> dict:
     response.raise_for_status()
     return response.json()
 
-def parse_govuk_page(api_response: dict, source_url: str) -> ParsedPage:
+def parse_govuk_page(api_response: dict, source_url: str) -> dict:
     """
-    Parses a GOV.UK Content API response into a ParsedPage.
+    Parses a GOV.UK Content API response into a dict.
     No HTTP calls — pure data transformation.
     """
     if api_response.get("withdrawn_notice"):
-        return ParsedPage(
-            url=source_url,
-            page_title=api_response.get("title", ""),
-            public_updated_at="",
-            is_withdrawn=True,
-        )
+        return {
+            "url": source_url,
+            "page_title": api_response.get("title", ""),
+            "public_updated_at": "",
+            "is_withdrawn": True,
+            "sections": [],
+        }
 
     canonical_url = f"https://www.gov.uk{api_response.get('base_path', '')}"
     page_title = api_response.get("title", "")
@@ -52,12 +52,13 @@ def parse_govuk_page(api_response: dict, source_url: str) -> ParsedPage:
     else:
         sections = _parse_parts(details.get("parts", []), canonical_url)
 
-    return ParsedPage(
-        url=canonical_url,
-        page_title=page_title,
-        public_updated_at=updated_at,
-        sections=sections,
-    )
+    return {
+        "url": canonical_url,
+        "page_title": page_title,
+        "public_updated_at": updated_at,
+        "is_withdrawn": False,
+        "sections": sections,
+    }
 
 
 def _parse_parts(parts: list[dict], canonical_url: str) -> list[Section]:
@@ -141,15 +142,42 @@ def _make_section(heading: str, anchor: str,
         direct_url=direct_url,
     )
 
-def fetch_govuk_page(url: str) -> ParsedPage:
+def fetch_govuk_page(url: str) -> dict:
     """
     Fetches and parses a GOV.UK page.
-    Errors are captured in ParsedPage.error — never raises.
+    Returns a dict with page data and sections for tool use.
     """
     try:
         api_response = get_govuk_page(url)
     except requests.RequestException as e:
-        return ParsedPage(url=url, page_title="",
-                         public_updated_at="", error=str(e))
+        return {
+            "url": url,
+            "page_title": "",
+            "public_updated_at": "",
+            "error": str(e),
+            "sections": [],
+        }
 
-    return parse_govuk_page(api_response, url)
+    parsed = parse_govuk_page(api_response, url)
+
+    # Convert Section objects to dicts
+    sections = [
+        {
+            "heading": s.heading,
+            "anchor": s.anchor,
+            "content_preview": s.content_preview,
+            "page_url": s.page_url,
+            "direct_url": s.direct_url,
+        }
+        for s in parsed.get("sections", [])
+        if isinstance(s, Section)
+    ]
+
+    return {
+        "url": parsed.get("url", ""),
+        "page_title": parsed.get("page_title", ""),
+        "public_updated_at": parsed.get("public_updated_at", ""),
+        "is_withdrawn": parsed.get("is_withdrawn", False),
+        "sections": sections,
+        "section_count": len(sections),
+    }

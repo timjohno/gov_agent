@@ -108,9 +108,9 @@ def make_tools(search_cap: int = 2) -> dict:
     visited_urls: set[str] = set()
 
     def handle_search(input_data: dict) -> dict:
-        if search_count[0] >= MAX_SEARCH_CALLS:
+        if search_count[0] >= search_cap:
             if DEBUG:
-                print(f"\n  🚫 search blocked (limit {MAX_SEARCH_CALLS} reached)")
+                print(f"\n  🚫 search blocked (limit {search_cap} reached)")
             return {
                 "error": "search_limit_reached",
                 "message": "Search limit reached. Use results from previous searches.",
@@ -118,7 +118,7 @@ def make_tools(search_cap: int = 2) -> dict:
         query_str = input_data.get("query", "")
         search_count[0] += 1
         if DEBUG:
-            print(f"\n  🔍 search_govuk(\"{query_str}\") [{search_count[0]}/{MAX_SEARCH_CALLS}]")
+            print(f"\n  🔍 search_govuk(\"{query_str}\") [{search_count[0]}/{search_cap}]")
         return search_govuk(query_str)
 
     def handle_fetch(input_data: dict) -> dict:
@@ -139,8 +139,8 @@ def make_tools(search_cap: int = 2) -> dict:
             title = result.get("page_title", "")
             print(f"     → \"{title}\" — {count} sections")
             for s in result.get("sections", [])[:5]:
-                anchor = f"[{s['anchor']}] " if s.get("anchor") else ""
-                print(f"       {anchor}{s['heading']}")
+                anchor_str = f"[{s.get('anchor', '')}] " if s.get("anchor") else ""
+                print(f"       {anchor_str}{s.get('heading', '')}")
         return result
 
     tools = {
