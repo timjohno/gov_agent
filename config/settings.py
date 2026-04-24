@@ -1,7 +1,4 @@
 """
-config/settings.py
-
-All configuration in one place.
 Set TAVILY_API_KEY as an environment variable before running.
 """
 

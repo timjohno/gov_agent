@@ -1,13 +1,3 @@
-"""
-tools/content.py
-
-GOV.UK Content API client.
-Fetches pages and returns structured sections for the model to reason about.
-Also provides fetch_section_verbatim() for retrieving the final display content —
-this is called by the application after the model identifies an anchor,
-and the model never sees or generates the text shown to the user.
-"""
-
 import requests
 from bs4 import BeautifulSoup
 from config.settings import (
@@ -18,6 +8,9 @@ from config.settings import (
     DEBUG,
     CONTENT_API_BASE
 )
+
+from tools.section import Section
+from tools.parsed_page import ParsedPage
 
 def get_govuk_page(url: str) -> dict:
     path = (
@@ -35,94 +28,71 @@ def get_govuk_page(url: str) -> dict:
     response.raise_for_status()
     return response.json()
 
-def fetch_govuk_page(url: str) -> dict:
+def parse_govuk_page(api_response: dict, source_url: str) -> ParsedPage:
     """
-    Fetches a GOV.UK page via the Content API and returns its sections.
-
-    Handles two page types:
-      - Simple pages: content in details.body
-      - Guide pages: content split across details.parts (tabs),
-        each part parsed with its own tab URL so direct_urls are
-        correctly scoped to the tab, not the parent guide.
+    Parses a GOV.UK Content API response into a ParsedPage.
+    No HTTP calls — pure data transformation.
     """
+    if api_response.get("withdrawn_notice"):
+        return ParsedPage(
+            url=source_url,
+            page_title=api_response.get("title", ""),
+            public_updated_at="",
+            is_withdrawn=True,
+        )
 
-    try:
-        data = get_govuk_page(url)
-    except requests.RequestException as e:
-        return {"error": f"fetch_failed: {e}", "url": url}
-
-    if data.get("withdrawn_notice"):
-        return {"error": "page_withdrawn", "url": url}
-
-    canonical_url = f"https://www.gov.uk{data.get('base_path', path)}"
-    page_title = data.get("title", "")
-    updated_at = data.get("public_updated_at", "")
-    details = data.get("details", {})
+    canonical_url = f"https://www.gov.uk{api_response.get('base_path', '')}"
+    page_title = api_response.get("title", "")
+    updated_at = api_response.get("public_updated_at", "")
+    details = api_response.get("details", {})
     html_body = details.get("body", "")
 
-    # Guide pages: content is split across parts (tabs)
-    if not html_body:
-        parts = details.get("parts", [])
-        if parts:
-            sections = []
-            for part in parts:
-                part_slug = part.get("slug", "")
-                part_url = f"{canonical_url}/{part_slug}"
-                part_body = part.get("body", "")
+    if html_body:
+        sections = _parse_body(html_body, canonical_url)
+    else:
+        sections = _parse_parts(details.get("parts", []), canonical_url)
 
-                if DEBUG:
-                    print(
-                        f"     [part] '{part.get('title')}' "
-                        f"slug='{part_slug}' body_len={len(part_body)}"
-                    )
+    return ParsedPage(
+        url=canonical_url,
+        page_title=page_title,
+        public_updated_at=updated_at,
+        sections=sections,
+    )
 
-                if part_body:
-                    # Parse using the tab URL so direct_urls are tab-scoped
-                    for section in _parse_sections(part_body, part_url):
-                        sections.append(section)
-                else:
-                    sections.append({
-                        "heading": part.get("title", ""),
-                        "anchor": part_slug,
-                        "page_url": part_url,
-                        "content_preview": f"Full content at {part_url}",
-                    })
 
-            return {
-                "url": canonical_url,
-                "page_title": page_title,
-                "public_updated_at": updated_at,
-                "section_count": len(sections),
-                "sections": sections,
-            }
+def _parse_parts(parts: list[dict], canonical_url: str) -> list[Section]:
+    """
+    Multi-part guide — each part parsed against its own tab URL
+    so section direct_urls point to the tab, not the parent guide.
+    """
+    sections = []
+    for part in parts:
+        slug = part.get("slug", "")
+        tab_url = f"{canonical_url}/{slug}"
+        body = part.get("body", "")
 
-        return {"error": "no_content_found", "url": url}
+        if body:
+            sections.extend(_parse_body(body, tab_url))
+        else:
+            sections.append(Section(
+                heading=part.get("title", ""),
+                anchor=slug,
+                content_preview=f"Full content at {tab_url}",
+                direct_url=tab_url,
+                page_url=tab_url,
+            ))
+    return sections
 
-    # Simple pages: single HTML body
+
+def _parse_body(html_body: str, page_url: str) -> list[Section]:
+    """
+    Parses a single HTML body into sections by H2/H3 heading structure.
+    Content before the first heading becomes an intro section
+    with an empty anchor.
+    """
     if len(html_body) > MAX_CONTENT_CHARS:
         html_body = html_body[:MAX_CONTENT_CHARS]
 
-    sections = _parse_sections(html_body, canonical_url)
-
-    return {
-        "url": canonical_url,
-        "page_title": page_title,
-        "public_updated_at": updated_at,
-        "section_count": len(sections),
-        "sections": sections,
-    }
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
-def _parse_sections(html_body: str, page_url: str) -> list[dict]:
-    """
-    Parses HTML into sections using H2/H3 heading structure.
-    Content before the first heading becomes an intro section.
-    Each section includes page_url so the model can construct direct_url.
-    """
     soup = BeautifulSoup(html_body, "lxml")
     sections = []
     current_heading = "Introduction"
@@ -153,16 +123,27 @@ def _parse_sections(html_body: str, page_url: str) -> list[dict]:
     return sections
 
 
-def _make_section(
-    heading: str,
-    anchor: str,
-    content: list[str],
-    page_url: str,
-) -> dict:
-    return {
-        "heading": heading,
-        "anchor": anchor,
-        "page_url": page_url,
-        "content_preview": " ".join(content).strip()[:CONTENT_PREVIEW_CHARS],
-    }
+def _make_section(heading: str, anchor: str,
+                  content: list[str], page_url: str) -> Section:
+    preview = " ".join(content).strip()[:CONTENT_PREVIEW_CHARS]
+    direct_url = f"{page_url}#{anchor}" if anchor else page_url
+    return Section(
+        heading=heading,
+        anchor=anchor,
+        content_preview=preview,
+        direct_url=direct_url,
+        page_url=page_url,
+    )
 
+def fetch_govuk_page(url: str, verify_ssl: bool = True) -> ParsedPage:
+    """
+    Fetches and parses a GOV.UK page.
+    Errors are captured in ParsedPage.error — never raises.
+    """
+    try:
+        api_response = get_govuk_page(url)
+    except requests.RequestException as e:
+        return ParsedPage(url=url, page_title="",
+                         public_updated_at="", error=str(e))
+
+    return parse_govuk_page(api_response, url)

@@ -1,10 +1,3 @@
-"""
-tools/search.py
-
-GOV.UK search via Tavily AI search API.
-Restricted to gov.uk domain for relevant results.
-"""
-
 import requests
 from config.settings import TAVILY_API_KEY, TAVILY_MAX_RESULTS, VERIFY_SSL, DEBUG
 
