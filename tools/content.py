@@ -71,6 +71,12 @@ def _parse_parts(parts: list[dict], canonical_url: str) -> list[Section]:
         tab_url = f"{canonical_url}/{slug}"
         body = part.get("body", "")
 
+        if DEBUG:
+            print(
+                f"     [part] '{part.get('title')}' "
+                f"slug='{slug}' body_len={len(body)}"
+            )
+
         if body:
             sections.extend(_parse_body(body, tab_url))
         else:
@@ -129,13 +135,13 @@ def _make_section(heading: str, anchor: str,
     direct_url = f"{page_url}#{anchor}" if anchor else page_url
     return Section(
         heading=heading,
-        anchor=anchor,
         content_preview=preview,
-        direct_url=direct_url,
         page_url=page_url,
+        anchor=anchor,
+        direct_url=direct_url,
     )
 
-def fetch_govuk_page(url: str, verify_ssl: bool = True) -> ParsedPage:
+def fetch_govuk_page(url: str) -> ParsedPage:
     """
     Fetches and parses a GOV.UK page.
     Errors are captured in ParsedPage.error — never raises.
