@@ -10,15 +10,20 @@ Usage:
     python main.py
 """
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import boto3
 from config.settings import AWS_REGION
 from retrieval.section_retrieval import find_section
 
 
 TEST_QUERIES = [
-    "Do I need to microchip my dog before travelling to Spain?",
+    #"Do I need to microchip my dog before travelling to Spain?",
     #"How long after a rabies vaccination before my dog can travel to the EU?",
     #"My dog's microchip cannot be read at the border — what happens?",
+    #"What are the rules on paying import VAT and customs duty when bringing goods into the UK from abroad?",
+    "what customs duty do I pay on imports uk"
 ]
 
 
